@@ -7,52 +7,8 @@ const startBtn = document.querySelector("#startBtn");
 const restartBtn = document.querySelector("#restartBtn");
 const userName = document.querySelector("#input");
 const even = document.querySelector(".event");
-const sonner = document.querySelector(".sonner"); // контейнер для уведомлений
+const sonner = document.querySelector(".sonner"); // контейнер для сообщений
 
-document.addEventListener("DOMContentLoaded", () => {
-  loadLeaderboard();
-});
-// ===== API функции =====
-async function saveScore(username, time) {
-  try {
-    const res = await fetch("/api/scores", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, time }),
-    });
-    return await res.json();
-  } catch (err) {
-    console.error("Error saving score:", err);
-  }
-}
-
-async function getBestTime() {
-  try {
-    const res = await fetch("/api/scores");
-    const data = await res.json();
-    if (data && data.length > 0) {
-      // Берём лучший результат (минимальный time)
-      const best = data.reduce((a, b) => (a.time < b.time ? a : b));
-      bestTime.textContent = `Best time: ${best.time} (${best.username})`;
-    } else {
-      bestTime.textContent = "Best time: 0";
-    }
-  } catch (err) {
-    console.error("Error fetching scores:", err);
-    bestTime.textContent = "Best time: 0";
-  }
-}
-
-// ===== Проверка имени игрока =====
-startBtn.addEventListener("click", () => {
-  if (userName.value.trim() === "") {
-    showMessage("Please enter your name");
-  } else {
-    welcome.style.display = "none";
-  }
-});
-
-// ===== Логика игры =====
 let points = 0;
 let secs = 0;
 let interval;
@@ -64,6 +20,70 @@ let firstCard = null;
 let secondCard = null;
 let lock = false;
 
+// ======= API =======
+async function saveScore(username, time) {
+  try {
+    await fetch("/api/scores", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, time }),
+    });
+  } catch (err) {
+    console.error("Error saving score:", err);
+  }
+}
+
+async function loadLeaderboard() {
+  try {
+    const res = await fetch("/api/scores");
+    const scores = await res.json();
+
+    const list = document.getElementById("leaderboard");
+    if (!list) return;
+    list.innerHTML = "";
+
+    scores.forEach((row, i) => {
+      const li = document.createElement("li");
+      li.textContent = `${i + 1}. ${row.username} — ${row.time}s`;
+      list.appendChild(li);
+    });
+  } catch (err) {
+    console.error("Error loading leaderboard:", err);
+  }
+}
+
+async function checkUsername(name) {
+  const res = await fetch("/api/scores");
+  const scores = await res.json();
+  return scores.some((row) => row.username === name);
+}
+
+// ======= Сообщения =======
+function showMessage(text) {
+  even.textContent = text;
+  sonner.classList.add("active");
+  setTimeout(() => sonner.classList.remove("active"), 3000);
+}
+
+// ======= Проверка имени =======
+startBtn.addEventListener("click", async () => {
+  const name = userName.value.trim();
+
+  if (name === "") {
+    showMessage("Please enter your name");
+    return;
+  }
+
+  const exists = await checkUsername(name);
+  if (exists) {
+    showMessage("This username already exists");
+    return;
+  }
+
+  welcome.style.display = "none";
+});
+
+// ======= Игровая логика =======
 function shuffle(array) {
   for (let i = array.length - 1; i > 0; i--) {
     let j = Math.floor(Math.random() * (i + 1));
@@ -78,28 +98,9 @@ function updateTime() {
   score.textContent = `Timer: ${secs}`;
 }
 
-function createCards() {
-  shuffle(items).forEach((symbol) => {
-    const card = document.createElement("div");
-    card.classList.add("card");
-
-    const inner = document.createElement("div");
-    inner.classList.add("card-inner");
-
-    const front = document.createElement("div");
-    front.classList.add("card-front");
-
-    const back = document.createElement("div");
-    back.classList.add("card-back");
-    back.textContent = symbol;
-
-    inner.appendChild(front);
-    inner.appendChild(back);
-    card.appendChild(inner);
-
-    card.addEventListener("click", () => handleCardClick(card));
-    game.appendChild(card);
-  });
+function resetPair() {
+  [firstCard, secondCard] = [null, null];
+  lock = false;
 }
 
 function handleCardClick(card) {
@@ -136,8 +137,6 @@ function handleCardClick(card) {
       if (points === items.length / 2) {
         clearInterval(interval);
         saveScore(userName.value.trim(), secs);
-        getBestTime();
-
         loadLeaderboard();
       }
       resetPair();
@@ -151,27 +150,28 @@ function handleCardClick(card) {
   }
 }
 
-function resetPair() {
-  [firstCard, secondCard] = [null, null];
-  lock = false;
-}
+function createCards() {
+  shuffle(items).forEach((symbol) => {
+    const card = document.createElement("div");
+    card.classList.add("card");
 
-async function loadLeaderboard() {
-  try {
-    const res = await fetch("/api/scores");
-    const scores = await res.json();
+    const inner = document.createElement("div");
+    inner.classList.add("card-inner");
 
-    const list = document.getElementById("leaderboard");
-    list.innerHTML = "";
+    const front = document.createElement("div");
+    front.classList.add("card-front");
 
-    scores.forEach((row, i) => {
-      const li = document.createElement("li");
-      li.textContent = `${i + 1}. ${row.username} — ${row.time}s`;
-      list.appendChild(li);
-    });
-  } catch (err) {
-    console.error("Error loading leaderboard:", err);
-  }
+    const back = document.createElement("div");
+    back.classList.add("card-back");
+    back.textContent = symbol;
+
+    inner.appendChild(front);
+    inner.appendChild(back);
+    card.appendChild(inner);
+
+    card.addEventListener("click", () => handleCardClick(card));
+    game.appendChild(card);
+  });
 }
 
 restartBtn.addEventListener("click", () => {
@@ -188,13 +188,6 @@ restartBtn.addEventListener("click", () => {
   createCards();
 });
 
-// ===== Сообщения для ошибок =====
-function showMessage(text) {
-  even.textContent = text;
-  sonner.classList.add("active");
-  setTimeout(() => sonner.classList.remove("active"), 3000);
-}
-
-// ===== Запуск =====
+// ======= Инициализация =======
 createCards();
-getBestTime();
+loadLeaderboard();
