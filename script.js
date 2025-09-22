@@ -9,6 +9,19 @@ const userName = document.querySelector("#input");
 const even = document.querySelector(".event");
 const sonner = document.querySelector(".sonner"); // контейнер для сообщений
 
+window.addEventListener("DOMContentLoaded", async () => {
+  const storedName = localStorage.getItem("playerName");
+
+  if (storedName) {
+    // Если имя уже есть — подставляем и скрываем ввод
+    userName.value = storedName;
+    welcome.style.display = "none";
+
+    await loadPlayerBestTime(storedName);
+    await loadLeaderboard();
+  }
+});
+
 let points = 0;
 let secs = 0;
 let interval;
@@ -90,16 +103,13 @@ startBtn.addEventListener("click", async () => {
     return;
   }
 
-  const exists = await checkUsername(name);
-  if (exists) {
-    showMessage("This username already exists");
-    return;
-  }
+  // Сохраняем имя в localStorage
+  localStorage.setItem("playerName", name);
 
   welcome.style.display = "none";
 
-  // Загрузка лучшего времени этого игрока
-  loadPlayerBestTime(name);
+  // Загружаем лучший рекорд текущего игрока
+  await loadPlayerBestTime(name);
 });
 
 // ======= Игровая логика =======
@@ -122,7 +132,7 @@ function resetPair() {
   lock = false;
 }
 
-function handleCardClick(card) {
+async function handleCardClick(card) {
   if (paused) {
     paused = false;
     start = Date.now() - elaps;
@@ -155,9 +165,9 @@ function handleCardClick(card) {
       points++;
       if (points === items.length / 2) {
         clearInterval(interval);
-        saveScore(userName.value.trim(), secs);
-        loadPlayerBestTime(userName.value.trim()); // обновляем best time
-        loadLeaderboard(); // обновляем общий топ-10
+        await saveScore(userName.value.trim(), secs);
+        await loadPlayerBestTime(userName.value.trim()); // обновляем best time
+        await loadLeaderboard(); // обновляем общий топ-10
       }
 
       resetPair();
