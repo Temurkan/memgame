@@ -7,40 +7,27 @@ const startBtn = document.querySelector("#startBtn");
 const restartBtn = document.querySelector("#restartBtn");
 const userName = document.querySelector("#input");
 const even = document.querySelector(".event");
-const sonner = document.querySelector(".sonner"); // контейнер для сообщений
+const sonner = document.querySelector(".sonner");
 
-window.addEventListener("DOMContentLoaded", async () => {
-  const storedName = localStorage.getItem("playerName");
+let points = 0,
+  secs = 0,
+  interval,
+  start = 0,
+  elaps = 0,
+  paused = true;
+let firstCard = null,
+  secondCard = null,
+  lock = false;
 
-  if (storedName) {
-    // Если имя уже есть — подставляем и скрываем ввод
-    userName.value = storedName;
-    welcome.style.display = "none";
-
-    await loadPlayerBestTime(storedName);
-    await loadLeaderboard();
-  }
-});
-
-let points = 0;
-let secs = 0;
-let interval;
-let start = 0;
-let elaps = 0;
-let paused = true;
-
-let firstCard = null;
-let secondCard = null;
-let lock = false;
-
-// ======= API =======
+// ===== API =====
 async function saveScore(username, time) {
   try {
-    await fetch("/api/scores", {
+    const res = await fetch("/api/scores", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ username, time }),
     });
+    return await res.json();
   } catch (err) {
     console.error("Error saving score:", err);
   }
@@ -50,13 +37,10 @@ async function loadPlayerBestTime(username) {
   try {
     const res = await fetch("/api/scores");
     const scores = await res.json();
-
-    const player = scores.find((row) => row.username === username);
-    if (player) {
-      bestTime.textContent = `Best time: ${player.time}s`;
-    } else {
-      bestTime.textContent = `Best time: 0s`;
-    }
+    const player = scores.find((r) => r.username === username);
+    bestTime.textContent = player
+      ? `Best time: ${player.time}s`
+      : "Best time: 0s";
   } catch (err) {
     console.error("Error loading player best time:", err);
   }
@@ -66,11 +50,9 @@ async function loadLeaderboard() {
   try {
     const res = await fetch("/api/scores");
     const scores = await res.json();
-
     const list = document.getElementById("leaderboard");
     if (!list) return;
     list.innerHTML = "";
-
     scores.forEach((row, i) => {
       const li = document.createElement("li");
       li.textContent = `${i + 1}. ${row.username} — ${row.time}s`;
@@ -81,50 +63,39 @@ async function loadLeaderboard() {
   }
 }
 
-async function checkUsername(name) {
-  const res = await fetch("/api/scores");
-  const scores = await res.json();
-  return scores.some((row) => row.username === name);
-}
-
-// ======= Сообщения =======
+// ===== Messages =====
 function showMessage(text) {
   even.textContent = text;
   sonner.classList.add("active");
   setTimeout(() => sonner.classList.remove("active"), 3000);
 }
 
-// ======= Проверка имени =======
+// ===== Start Game =====
 startBtn.addEventListener("click", async () => {
   const inputName = userName.value.trim();
   const storedName = localStorage.getItem("playerName");
 
-  if (inputName === "" && !storedName) {
+  if (!storedName && inputName === "") {
     showMessage("Please enter your name");
     return;
   }
 
-  // Если уже есть сохранённый игрок
+  // Если есть локальное имя и ввели другое — запрещаем
   if (storedName && inputName && inputName !== storedName) {
     showMessage(`This game is for ${storedName}. You cannot use another name.`);
     return;
   }
 
-  // Если нет сохранённого игрока, сохраняем введённое имя
-  if (!storedName) {
-    localStorage.setItem("playerName", inputName);
-  }
-
   const currentName = storedName || inputName;
+  localStorage.setItem("playerName", currentName);
 
   welcome.style.display = "none";
 
-  // Загружаем лучший рекорд текущего игрока
   await loadPlayerBestTime(currentName);
   await loadLeaderboard();
 });
 
-// ======= Игровая логика =======
+// ===== Game Logic =====
 function shuffle(array) {
   for (let i = array.length - 1; i > 0; i--) {
     let j = Math.floor(Math.random() * (i + 1));
@@ -132,13 +103,11 @@ function shuffle(array) {
   }
   return array;
 }
-
 function updateTime() {
   elaps = Date.now() - start;
   secs = Math.floor(elaps / 1000);
   score.textContent = `Timer: ${secs}`;
 }
-
 function resetPair() {
   [firstCard, secondCard] = [null, null];
   lock = false;
@@ -150,38 +119,33 @@ async function handleCardClick(card) {
     start = Date.now() - elaps;
     interval = setInterval(updateTime, 1000);
   }
-
   if (
     lock ||
     card.classList.contains("flipped") ||
     card.classList.contains("matched")
-  ) {
+  )
     return;
-  }
 
   card.classList.add("flipped");
 
-  if (!firstCard) {
-    firstCard = card;
-  } else {
+  if (!firstCard) firstCard = card;
+  else {
     secondCard = card;
     lock = true;
-
     const firstSymbol = firstCard.querySelector(".card-back").textContent;
     const secondSymbol = secondCard.querySelector(".card-back").textContent;
 
     if (firstSymbol === secondSymbol) {
       firstCard.classList.add("matched");
       secondCard.classList.add("matched");
-
       points++;
       if (points === items.length / 2) {
         clearInterval(interval);
-        await saveScore(userName.value.trim(), secs);
-        await loadPlayerBestTime(userName.value.trim()); // обновляем best time
-        await loadLeaderboard(); // обновляем общий топ-10
+        const playerName = localStorage.getItem("playerName");
+        await saveScore(playerName, secs);
+        await loadPlayerBestTime(playerName);
+        await loadLeaderboard();
       }
-
       resetPair();
     } else {
       setTimeout(() => {
@@ -193,30 +157,27 @@ async function handleCardClick(card) {
   }
 }
 
+// ===== Cards =====
 function createCards() {
   shuffle(items).forEach((symbol) => {
     const card = document.createElement("div");
     card.classList.add("card");
-
     const inner = document.createElement("div");
     inner.classList.add("card-inner");
-
     const front = document.createElement("div");
     front.classList.add("card-front");
-
     const back = document.createElement("div");
     back.classList.add("card-back");
     back.textContent = symbol;
-
     inner.appendChild(front);
     inner.appendChild(back);
     card.appendChild(inner);
-
     card.addEventListener("click", () => handleCardClick(card));
     game.appendChild(card);
   });
 }
 
+// ===== Restart =====
 restartBtn.addEventListener("click", () => {
   game.innerHTML = "";
   points = 0;
@@ -231,6 +192,14 @@ restartBtn.addEventListener("click", () => {
   createCards();
 });
 
-// ======= Инициализация =======
-createCards();
-loadLeaderboard();
+// ===== Init =====
+window.addEventListener("DOMContentLoaded", async () => {
+  const storedName = localStorage.getItem("playerName");
+  if (storedName) {
+    userName.value = storedName;
+    welcome.style.display = "none";
+    await loadPlayerBestTime(storedName);
+    await loadLeaderboard();
+  }
+  createCards();
+});

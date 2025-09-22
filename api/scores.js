@@ -1,205 +1,71 @@
-const game = document.querySelector(".game");
-const items = ["🍎", "🍌", "🍇", "🍉", "🍎", "🍌", "🍇", "🍉"];
-const score = document.querySelector(".score");
-const bestTime = document.querySelector(".best");
-const welcome = document.querySelector(".welcome");
-const startBtn = document.querySelector("#startBtn");
-const restartBtn = document.querySelector("#restartBtn");
-const userName = document.querySelector("#input");
-const even = document.querySelector(".event");
-const sonner = document.querySelector(".sonner");
+import { createClient } from "@supabase/supabase-js";
 
-let points = 0,
-  secs = 0,
-  interval,
-  start = 0,
-  elaps = 0,
-  paused = true;
-let firstCard = null,
-  secondCard = null,
-  lock = false;
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_KEY
+);
 
-// ===== API =====
-async function saveScore(username, time) {
-  try {
-    const res = await fetch("/api/scores", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, time }),
-    });
-    return await res.json();
-  } catch (err) {
-    console.error("Error saving score:", err);
-  }
-}
+export default async function handler(req, res) {
+  if (req.method === "POST") {
+    const { username, time } = req.body;
 
-async function loadPlayerBestTime(username) {
-  try {
-    const res = await fetch("/api/scores");
-    const scores = await res.json();
-    const player = scores.find((r) => r.username === username);
-    bestTime.textContent = player
-      ? `Best time: ${player.time}s`
-      : "Best time: 0s";
-  } catch (err) {
-    console.error("Error loading player best time:", err);
-  }
-}
+    // ищем игрока
+    const { data: existing, error: fetchError } = await supabase
+      .from("scores")
+      .select("time")
+      .eq("username", username)
+      .single();
 
-async function loadLeaderboard() {
-  try {
-    const res = await fetch("/api/scores");
-    const scores = await res.json();
-    const list = document.getElementById("leaderboard");
-    if (!list) return;
-    list.innerHTML = "";
-    scores.forEach((row, i) => {
-      const li = document.createElement("li");
-      li.textContent = `${i + 1}. ${row.username} — ${row.time}s`;
-      list.appendChild(li);
-    });
-  } catch (err) {
-    console.error("Error loading leaderboard:", err);
-  }
-}
+    if (fetchError && fetchError.code !== "PGRST116") {
+      console.error(fetchError);
+      return res.status(500).json({ error: fetchError.message });
+    }
 
-// ===== Messages =====
-function showMessage(text) {
-  even.textContent = text;
-  sonner.classList.add("active");
-  setTimeout(() => sonner.classList.remove("active"), 3000);
-}
+    if (!existing) {
+      // игрока нет → создаём
+      const { error } = await supabase
+        .from("scores")
+        .insert([{ username, time }]);
 
-// ===== Start Game =====
-startBtn.addEventListener("click", async () => {
-  const inputName = userName.value.trim();
-  const storedName = localStorage.getItem("playerName");
-
-  if (!storedName && inputName === "") {
-    showMessage("Please enter your name");
-    return;
-  }
-
-  // Если есть локальное имя и ввели другое — запрещаем
-  if (storedName && inputName && inputName !== storedName) {
-    showMessage(`This game is for ${storedName}. You cannot use another name.`);
-    return;
-  }
-
-  const currentName = storedName || inputName;
-  localStorage.setItem("playerName", currentName);
-
-  welcome.style.display = "none";
-
-  await loadPlayerBestTime(currentName);
-  await loadLeaderboard();
-});
-
-// ===== Game Logic =====
-function shuffle(array) {
-  for (let i = array.length - 1; i > 0; i--) {
-    let j = Math.floor(Math.random() * (i + 1));
-    [array[i], array[j]] = [array[j], array[i]];
-  }
-  return array;
-}
-function updateTime() {
-  elaps = Date.now() - start;
-  secs = Math.floor(elaps / 1000);
-  score.textContent = `Timer: ${secs}`;
-}
-function resetPair() {
-  [firstCard, secondCard] = [null, null];
-  lock = false;
-}
-
-async function handleCardClick(card) {
-  if (paused) {
-    paused = false;
-    start = Date.now() - elaps;
-    interval = setInterval(updateTime, 1000);
-  }
-  if (
-    lock ||
-    card.classList.contains("flipped") ||
-    card.classList.contains("matched")
-  )
-    return;
-
-  card.classList.add("flipped");
-
-  if (!firstCard) firstCard = card;
-  else {
-    secondCard = card;
-    lock = true;
-    const firstSymbol = firstCard.querySelector(".card-back").textContent;
-    const secondSymbol = secondCard.querySelector(".card-back").textContent;
-
-    if (firstSymbol === secondSymbol) {
-      firstCard.classList.add("matched");
-      secondCard.classList.add("matched");
-      points++;
-      if (points === items.length / 2) {
-        clearInterval(interval);
-        const playerName = localStorage.getItem("playerName");
-        await saveScore(playerName, secs);
-        await loadPlayerBestTime(playerName);
-        await loadLeaderboard();
+      if (error) {
+        console.error(error);
+        return res.status(500).json({ error: error.message });
       }
-      resetPair();
+      return res.status(200).json({ success: true, message: "Score added" });
+    } else if (time < existing.time) {
+      // игрок есть и время лучше → обновляем
+      const { error } = await supabase
+        .from("scores")
+        .update({ time })
+        .eq("username", username);
+
+      if (error) {
+        console.error(error);
+        return res.status(500).json({ error: error.message });
+      }
+      return res.status(200).json({ success: true, message: "Score updated" });
     } else {
-      setTimeout(() => {
-        firstCard.classList.remove("flipped");
-        secondCard.classList.remove("flipped");
-        resetPair();
-      }, 1000);
+      return res
+        .status(200)
+        .json({ success: true, message: "Existing score is better" });
     }
   }
-}
 
-// ===== Cards =====
-function createCards() {
-  shuffle(items).forEach((symbol) => {
-    const card = document.createElement("div");
-    card.classList.add("card");
-    const inner = document.createElement("div");
-    inner.classList.add("card-inner");
-    const front = document.createElement("div");
-    front.classList.add("card-front");
-    const back = document.createElement("div");
-    back.classList.add("card-back");
-    back.textContent = symbol;
-    inner.appendChild(front);
-    inner.appendChild(back);
-    card.appendChild(inner);
-    card.addEventListener("click", () => handleCardClick(card));
-    game.appendChild(card);
-  });
-}
+  if (req.method === "GET") {
+    const { data, error } = await supabase
+      .from("scores")
+      .select("username, time")
+      .order("time", { ascending: true })
+      .limit(10);
 
-// ===== Restart =====
-restartBtn.addEventListener("click", () => {
-  game.innerHTML = "";
-  points = 0;
-  paused = true;
-  secs = 0;
-  start = 0;
-  elaps = 0;
-  score.textContent = "Timer: 0";
-  clearInterval(interval);
-  interval = null;
-  resetPair();
-  createCards();
-});
+    if (error) {
+      console.error(error);
+      return res.status(500).json({ error: error.message });
+    }
 
-// ===== Init =====
-window.addEventListener("DOMContentLoaded", async () => {
-  const storedName = localStorage.getItem("playerName");
-  if (storedName) {
-    userName.value = storedName;
-    welcome.style.display = "none";
-    await loadPlayerBestTime(storedName);
-    await loadLeaderboard();
+    return res.status(200).json(data);
   }
-  createCards();
-});
+
+  res.setHeader("Allow", ["GET", "POST"]);
+  res.status(405).json({ error: `Method ${req.method} Not Allowed` });
+}
