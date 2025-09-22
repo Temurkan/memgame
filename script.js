@@ -33,6 +33,22 @@ async function saveScore(username, time) {
   }
 }
 
+async function loadPlayerBestTime(username) {
+  try {
+    const res = await fetch("/api/scores");
+    const scores = await res.json();
+
+    const player = scores.find((row) => row.username === username);
+    if (player) {
+      bestTime.textContent = `Best time: ${player.time}s`;
+    } else {
+      bestTime.textContent = `Best time: 0s`;
+    }
+  } catch (err) {
+    console.error("Error loading player best time:", err);
+  }
+}
+
 async function loadLeaderboard() {
   try {
     const res = await fetch("/api/scores");
@@ -81,6 +97,9 @@ startBtn.addEventListener("click", async () => {
   }
 
   welcome.style.display = "none";
+
+  // Загрузка лучшего времени этого игрока
+  loadPlayerBestTime(name);
 });
 
 // ======= Игровая логика =======
@@ -137,8 +156,10 @@ function handleCardClick(card) {
       if (points === items.length / 2) {
         clearInterval(interval);
         saveScore(userName.value.trim(), secs);
-        loadLeaderboard();
+        loadPlayerBestTime(userName.value.trim()); // обновляем best time
+        loadLeaderboard(); // обновляем общий топ-10
       }
+
       resetPair();
     } else {
       setTimeout(() => {
