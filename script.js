@@ -9,6 +9,9 @@ const userName = document.querySelector("#input");
 const even = document.querySelector(".event");
 const sonner = document.querySelector(".sonner"); // контейнер для уведомлений
 
+document.addEventListener("DOMContentLoaded", () => {
+  loadLeaderboard();
+});
 // ===== API функции =====
 async function saveScore(username, time) {
   try {
@@ -134,6 +137,8 @@ function handleCardClick(card) {
         clearInterval(interval);
         saveScore(userName.value.trim(), secs);
         getBestTime();
+
+        loadLeaderboard();
       }
       resetPair();
     } else {
@@ -149,6 +154,24 @@ function handleCardClick(card) {
 function resetPair() {
   [firstCard, secondCard] = [null, null];
   lock = false;
+}
+
+async function loadLeaderboard() {
+  try {
+    const res = await fetch("/api/scores");
+    const scores = await res.json();
+
+    const list = document.getElementById("leaderboard");
+    list.innerHTML = "";
+
+    scores.forEach((row, i) => {
+      const li = document.createElement("li");
+      li.textContent = `${i + 1}. ${row.username} — ${row.time}s`;
+      list.appendChild(li);
+    });
+  } catch (err) {
+    console.error("Error loading leaderboard:", err);
+  }
 }
 
 restartBtn.addEventListener("click", () => {
