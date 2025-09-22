@@ -96,20 +96,32 @@ function showMessage(text) {
 
 // ======= Проверка имени =======
 startBtn.addEventListener("click", async () => {
-  const name = userName.value.trim();
+  const inputName = userName.value.trim();
+  const storedName = localStorage.getItem("playerName");
 
-  if (name === "") {
+  if (inputName === "" && !storedName) {
     showMessage("Please enter your name");
     return;
   }
 
-  // Сохраняем имя в localStorage
-  localStorage.setItem("playerName", name);
+  // Если уже есть сохранённый игрок
+  if (storedName && inputName && inputName !== storedName) {
+    showMessage(`This game is for ${storedName}. You cannot use another name.`);
+    return;
+  }
+
+  // Если нет сохранённого игрока, сохраняем введённое имя
+  if (!storedName) {
+    localStorage.setItem("playerName", inputName);
+  }
+
+  const currentName = storedName || inputName;
 
   welcome.style.display = "none";
 
   // Загружаем лучший рекорд текущего игрока
-  await loadPlayerBestTime(name);
+  await loadPlayerBestTime(currentName);
+  await loadLeaderboard();
 });
 
 // ======= Игровая логика =======
