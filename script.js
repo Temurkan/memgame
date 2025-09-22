@@ -7,43 +7,59 @@ const startBtn = document.querySelector("#startBtn");
 const restartBtn = document.querySelector("#restartBtn");
 const userName = document.querySelector("#input");
 const even = document.querySelector(".event");
+const sonner = document.querySelector(".sonner"); // контейнер для уведомлений
 
-// Загружаем рекорд
-let record = localStorage.getItem("record");
-record = record ? Number(record) : null;
+// ===== API функции =====
+async function saveScore(username, time) {
+  try {
+    const res = await fetch("/api/scores", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, time }),
+    });
+    return await res.json();
+  } catch (err) {
+    console.error("Error saving score:", err);
+  }
+}
 
-bestTime.textContent = "Best time: " + (record !== null ? record : "0");
+async function getBestTime() {
+  try {
+    const res = await fetch("/api/scores");
+    const data = await res.json();
+    if (data && data.length > 0) {
+      // Берём лучший результат (минимальный time)
+      const best = data.reduce((a, b) => (a.time < b.time ? a : b));
+      bestTime.textContent = `Best time: ${best.time} (${best.username})`;
+    } else {
+      bestTime.textContent = "Best time: 0";
+    }
+  } catch (err) {
+    console.error("Error fetching scores:", err);
+    bestTime.textContent = "Best time: 0";
+  }
+}
 
+// ===== Проверка имени игрока =====
 startBtn.addEventListener("click", () => {
-  let t = JSON.parse(localStorage.getItem("userobj"));
-
   if (userName.value.trim() === "") {
-    sonner.classList.add("active");
-    even.innerHTML = "Please enter your name";
-    function greet() {
-      sonner.classList.remove("active");
-    }
-
-    setTimeout(greet, 4000);
-  } else if (t.user === userName.value.trim()) {
-    even.innerHTML = "This username has taken";
-    sonner.classList.add("active");
-    function greet() {
-      sonner.classList.remove("active");
-    }
-
-    setTimeout(greet, 4000);
+    showMessage("Please enter your name");
   } else {
     welcome.style.display = "none";
   }
 });
 
+// ===== Логика игры =====
 let points = 0;
 let secs = 0;
 let interval;
 let start = 0;
 let elaps = 0;
 let paused = true;
+
+let firstCard = null;
+let secondCard = null;
+let lock = false;
 
 function shuffle(array) {
   for (let i = array.length - 1; i > 0; i--) {
@@ -53,14 +69,10 @@ function shuffle(array) {
   return array;
 }
 
-let firstCard = null;
-let secondCard = null;
-let lock = false;
-
 function updateTime() {
   elaps = Date.now() - start;
-  secs = Math.floor((elaps / 1000) % 60);
-  score.innerHTML = `Timer: ${secs}`;
+  secs = Math.floor(elaps / 1000);
+  score.textContent = `Timer: ${secs}`;
 }
 
 function createCards() {
@@ -73,7 +85,6 @@ function createCards() {
 
     const front = document.createElement("div");
     front.classList.add("card-front");
-    front.textContent = "";
 
     const back = document.createElement("div");
     back.classList.add("card-back");
@@ -83,66 +94,61 @@ function createCards() {
     inner.appendChild(back);
     card.appendChild(inner);
 
-    card.addEventListener("click", () => {
-      if (paused) {
-        paused = false;
-        start = Date.now() - elaps;
-        interval = setInterval(updateTime, 1000);
-      }
-
-      if (
-        lock ||
-        card.classList.contains("flipped") ||
-        card.classList.contains("matched")
-      )
-        return;
-
-      card.classList.add("flipped");
-
-      if (!firstCard) {
-        firstCard = card;
-      } else {
-        secondCard = card;
-        lock = true;
-
-        const firstSymbol = firstCard.querySelector(".card-back").textContent;
-        const secondSymbol = secondCard.querySelector(".card-back").textContent;
-
-        const userObj = {
-          user: userName.value,
-          time: secs,
-        };
-
-        if (firstSymbol === secondSymbol) {
-          firstCard.classList.add("matched");
-          secondCard.classList.add("matched");
-
-          points++;
-          if (points === 4) {
-            clearInterval(interval);
-
-            // Обновляем рекорд
-            if (record === null || secs < record) {
-              record = secs;
-              localStorage.setItem("record", record);
-              localStorage.setItem("userobj", JSON.stringify(userObj));
-              bestTime.textContent = "Best time: " + record;
-            }
-          }
-
-          reset();
-        } else {
-          setTimeout(() => {
-            firstCard.classList.remove("flipped");
-            secondCard.classList.remove("flipped");
-            reset();
-          }, 1000);
-        }
-      }
-    });
-
+    card.addEventListener("click", () => handleCardClick(card));
     game.appendChild(card);
   });
+}
+
+function handleCardClick(card) {
+  if (paused) {
+    paused = false;
+    start = Date.now() - elaps;
+    interval = setInterval(updateTime, 1000);
+  }
+
+  if (
+    lock ||
+    card.classList.contains("flipped") ||
+    card.classList.contains("matched")
+  ) {
+    return;
+  }
+
+  card.classList.add("flipped");
+
+  if (!firstCard) {
+    firstCard = card;
+  } else {
+    secondCard = card;
+    lock = true;
+
+    const firstSymbol = firstCard.querySelector(".card-back").textContent;
+    const secondSymbol = secondCard.querySelector(".card-back").textContent;
+
+    if (firstSymbol === secondSymbol) {
+      firstCard.classList.add("matched");
+      secondCard.classList.add("matched");
+
+      points++;
+      if (points === items.length / 2) {
+        clearInterval(interval);
+        saveScore(userName.value.trim(), secs);
+        getBestTime();
+      }
+      resetPair();
+    } else {
+      setTimeout(() => {
+        firstCard.classList.remove("flipped");
+        secondCard.classList.remove("flipped");
+        resetPair();
+      }, 1000);
+    }
+  }
+}
+
+function resetPair() {
+  [firstCard, secondCard] = [null, null];
+  lock = false;
 }
 
 restartBtn.addEventListener("click", () => {
@@ -152,18 +158,20 @@ restartBtn.addEventListener("click", () => {
   secs = 0;
   start = 0;
   elaps = 0;
-  score.innerHTML = `Timer: ${secs}`;
+  score.textContent = "Timer: 0";
   clearInterval(interval);
   interval = null;
-  firstCard = null;
-  secondCard = null;
-  lock = false;
+  resetPair();
   createCards();
 });
 
-createCards();
-
-function reset() {
-  [firstCard, secondCard] = [null, null];
-  lock = false;
+// ===== Сообщения для ошибок =====
+function showMessage(text) {
+  even.textContent = text;
+  sonner.classList.add("active");
+  setTimeout(() => sonner.classList.remove("active"), 3000);
 }
+
+// ===== Запуск =====
+createCards();
+getBestTime();

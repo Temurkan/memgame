@@ -7,7 +7,6 @@ const supabase = createClient(
 
 export default async function handler(req, res) {
   if (req.method === "GET") {
-    // вернуть топ-10 игроков
     const { data, error } = await supabase
       .from("scores")
       .select("username, time")
@@ -25,7 +24,6 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Missing username or time" });
     }
 
-    // сохраняем рекорд
     const { error } = await supabase
       .from("scores")
       .insert([{ username, time }]);
